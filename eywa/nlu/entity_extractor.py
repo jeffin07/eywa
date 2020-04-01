@@ -7,6 +7,13 @@ import numpy as np
 
 
 class EntityExtractor(object):
+    """
+    
+    Gets the required entities from the input.
+    
+    """
+
+    
 
     def __init__(self):
         self.X = []
@@ -24,16 +31,44 @@ class EntityExtractor(object):
         return list(self.keys.keys())
 
     def fit(self, X, Y):
+        """
+        Trains the model on given data.
+        
+        # Arguments
+        
+        X: Input utterance(s). It could be:
+            - `str` (or `list` thereof)
+            - `Document` instance (or `list` thereof)
+        Y: Target values. `dict` mapping from from entity name (`str`)
+          to entity value (`str`)(or list thereof).
+          The entity names should be same throughout all `dict` 
+          elements and number of `dict` elements should be
+          same as the number of elements of X.
+          
+        # Example
+        
+        Train an `EntityExtractor` to extract entities "intent" and "place" from utterances
+        labels "intent" and "place":
+        ```python
+        x = ['who was the first president of USA', 'which party got elected last time']
+        y = [{'intent': 'politics', 'place': 'USA'}, {'intent': 'politics','place': 'here'}]
+        ex = EntityExtractor()
+        ex.fit(x, y)
+        ```
+        """
         x_app = self.X.append
         y_app = self.Y.append
+        if not isinstance(X, (list, tuple)):
+            X = [X]
+        if not isinstance(Y, (list, tuple)):
+            Y = [Y]
         for x, y in zip(X, Y):
             x = Document(x)
             x_app(x)
             y_app(y)
         self._changed = True
 
-    def compile(self):
-        # create a profile for each 'key'
+    def _compile(self):
         keys = set()
         for y in self.Y:
             for k in y:
@@ -43,8 +78,8 @@ class EntityExtractor(object):
         keys = self.keys
         for i, (x, y) in enumerate(zip(self.X, self.Y)):
             for k in keys:
-                if k in y:
-                    kk = keys[k]
+                kk = keys[k]
+                if k in y:                    
                     types = kk['types']
                     v = y[k]
                     indices = []
@@ -79,16 +114,53 @@ class EntityExtractor(object):
                         consts[None] = [i]
 
     def predict(self, x, keys=None, return_scores=False):
-        if type(x) in (list, tuple):
-            return type(x)(map(self.predict, x))
+        """
+        Extracts entities for  given input utterance(s).
+        
+        # Arguments
+        
+        x: Input utterance(s). It could be:
+            - `str` (or `list`/`tuple` thereof)
+            - `Document` instance (or `list`/`tuple` thereof)
+        `return_scores`: `bool`. Default `False`.
+        If `True`, Returns a dict (or list thereof if x is a list) mapping entity names
+        to a list of tuples, where each tuple consists of a possible entity value (`str`)
+        and a confidence score (`float`).
+        Else, returns entity name for entity value with highest confidence per utterance.
+        `keys`:list of str.  entities to be extracted. 
+        If not specified, all entities will be extracted.
+        
+
+        # Returns
+        
+        if `return_scores` is `True`:
+            if `x` is a single utterance:
+                Returns a `list` of `dict`s of the
+                form (entity name, confidence) for each class,
+                sorted by decreasing order of confidence.
+            if `x` is a `list`/`tuple` of utterances:
+                Returns a `list` of results with 1 result per
+                utterance. Each result will be a `list` of
+                `dict`s of the form (entity name, confidence) for
+                each class, sorted by decreasing order of confidence.
+        if `return_scores` is `False`:
+            if `x` is a single utterance:
+                Returns the predicted label as `dict`.
+            if `x` is a `list`/`tuple` of utterances:
+                Returns the predicted labels for utterances as `list` of
+                `dict`s.
+        """
+
         if self._changed:
-            self.compile()
+            self._compile()
             self._changed = False
+        if type(x) in (list, tuple):
+            return type(x)(map(lambda x:
+                               self.predict(x, keys, return_scores), x))
         if keys is None:
             keys = self.keys.keys()
         x = tokenize_by_stop_words(x)
         y_scores = self.forward(x)
-        y = {}
         self_keys = self.keys
         if return_scores:
             entity_prob_dist = {}
@@ -102,7 +174,8 @@ class EntityExtractor(object):
                 entity_probs = sorted(list(zip(vals,scores)), key=lambda x: x[1], reverse=True)
                 entity_prob_dist[k] = entity_probs
             return entity_prob_dist
-        else:            
+        else:
+            y = {}         
             for k in keys:
                 kk = self_keys[k]
                 should_pick, pick_scores, const_scores = y_scores[k]
@@ -111,7 +184,7 @@ class EntityExtractor(object):
                     y[k] = vals[int(tf.argmax(pick_scores))]
                 else:
                     y[k] = list(kk['consts'].keys())[int(tf.argmax(const_scores))]
-        return y
+            return y
 
     def forward(self, x):
         assert isinstance(x, Document)
@@ -176,6 +249,27 @@ class EntityExtractor(object):
         return y
 
     def evaluate(self, X=None, Y=None):
+        """Evaluates the EntityExtractor on given data.
+
+        Either both `X` and `Y` arguments should be provided
+        or both of them should be left unspecified (`None`).
+        If left unspecified, the cumilative data used to train
+        the `EntityExtractor` will be used for evaluation .
+
+        # Arguments
+        X: Input utterance(s). It could be:
+            - `str` (or `list` thereof)
+            - `Document` instance (or `list` thereof)
+        Y: Target values. `dict` mapping from from entity name (`str`)
+          to entity value (`str`)(or list thereof).
+          The entity names should be same throughout all `dict` 
+          elements and number of `dict` elements should be
+          same as the number of elements of X.
+
+        # Returns
+        `tuple` of error(`float`) and accuracy(`float`)
+        """
+
         if X is None:
             X = self.X
             Y = self.Y
@@ -191,6 +285,12 @@ class EntityExtractor(object):
         return errors, accuracy
 
     def serialize(self):
+        """Serializes the `EntityExtractor` object to a json
+        friendly config.
+
+        # Returns
+        `dict`
+        """
         config = {}
         config['X'] = [str(x) for x in self.X]
         config['Y'] = self.Y[:]
@@ -199,16 +299,35 @@ class EntityExtractor(object):
 
     @classmethod
     def deserialize(cls, config):
+        """Deserializes a `EntityExtractor` config to a `EntityExtractor` instance.
+
+        # Arguments
+        config: `dict`. `EntityExtractor` config (generated by `EntityExtractor.serialize`).
+
+        # Returns
+        `EntityExtractor` instance
+        """
         ee = cls()
         ee.fit(config['X'], config['Y'])
         ee.set_weights(config['weights'])
         return ee
 
     def set_weights(self, weights):
+        """Sets weights of the `EntityExtractor` to given
+        values.
+
+        # Arguments
+        weights: `list` of numpy arrays
+        """
         assert isinstance(weights, list)
         assert len(weights) == len(self.weights)
         for (w_in, w_curr) in zip(weights, self.weights):
                 w_curr.assign(w_in)
 
     def get_weights(self):
+        """Returns weights of the `EntityExtractor`.
+
+        # Returns
+        `list` of numpy arrays
+        """
         return [w.numpy() for w in self.weights]
