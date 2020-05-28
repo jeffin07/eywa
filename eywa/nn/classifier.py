@@ -37,7 +37,7 @@ class NNClassifier(object):
         if train:
             self.fit()
 
-    def _default_training_config():
+    def _default_training_config(self):
         return {
             'epochs': 20,
             'batch_size': 3
@@ -58,7 +58,7 @@ class NNClassifier(object):
             self._get_casing_vector(w.text, vector[i][-3:])
         return vector
 
-    def _get_casing_vector(self, word, vetor=None):
+    def _get_casing_vector(self, word, vector=None):
         vec_size = 3 # ['NoDigits', 'SomeDigits', 'AllDigits']
         if vector is None:
             vector = np.zeros(vec_size)
@@ -156,8 +156,8 @@ class NNClassifier(object):
         
         if self.is_binary:
             prob = {
-                    self.classes[0] : out,
-                    self.classes[1] : 1. - out
+                    self.classes[1] : out,
+                    self.classes[0] : 1. - out
             }
         else:
             prob = {
